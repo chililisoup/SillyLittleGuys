@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "sillylittleguys",
+  "version": "${version}",
+  "name": "Silly Little Guys",
+  "description": "Silly Little Guys",
+  "authors": [
+    "chililisoup"
+  ],
+  "contact": {
+    "homepage": ""
+  },
+  "license": "All-Rights-Reserved",
+  "icon": "assets/sillylittleguys/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.chililisoup.sillylittleguys.fabric.SillyLittleGuysFabric"
+    ],
+    "client": [
+      "dev.chililisoup.sillylittleguys.fabric.client.SillyLittleGuysFabricClient"
+    ]
+  },
+  "mixins": [
+    "sillylittleguys.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.14",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

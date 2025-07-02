@@ -1,0 +1,32 @@
+modLoader = "javafml"
+loaderVersion = "[2,)"
+#issueTrackerURL = ""
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "sillylittleguys"
+version = "${version}"
+displayName = "Silly Little Guys"
+authors = "chililisoup"
+description = '''
+Silly Little Guys
+'''
+#logoFile = ""
+
+[[dependencies.sillylittleguys]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.sillylittleguys]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+
+[[mixins]]
+config = "sillylittleguys.mixins.json"
