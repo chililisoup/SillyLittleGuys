@@ -11,11 +11,16 @@ import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoAnimatable;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
+import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 
 public class SillyLittleGuyRenderer<T extends Entity&GeoAnimatable> extends GeoEntityRenderer<T> {
+    public SillyLittleGuyRenderer(EntityRendererProvider.Context renderManager, GeoModel<T> model) {
+        super(renderManager, model);
+    }
+
     public SillyLittleGuyRenderer(EntityRendererProvider.Context renderManager, String name) {
-        super(renderManager, new SillyLittleGuyModel<>(name));
+        this(renderManager, new SillyLittleGuyModel<>(name));
     }
 
     @Override
