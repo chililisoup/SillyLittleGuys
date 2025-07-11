@@ -6,6 +6,8 @@
     "minecraft:apple",
     "minecraft:glow_berries",
     "minecraft:bread",
-    "minecraft:pumpkin_pie"
+    "minecraft:pumpkin_pie",
+    { "required": false, "id": "#c:foods/fruit" },
+    { "required": false, "id": "#c:foods/bread" }
   ]
 }

@@ -11,11 +11,14 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.ByIdMap;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -24,8 +27,10 @@ import net.minecraft.world.entity.ai.util.DefaultRandomPos;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
@@ -56,6 +61,7 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     private static final EntityDimensions HOPPING_DIMENSIONS = EntityDimensions.scalable(0.6F, 1.5F).withEyeHeight(1.35F);
 
     protected static final RawAnimation SIT_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit");
+    protected static final RawAnimation SIT_UPRIGHT_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit_upright");
     protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.walk");
     protected static final RawAnimation STAND_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.stand");
     protected static final RawAnimation HOP_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.hop");
@@ -109,6 +115,23 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     @Override
     public @NotNull InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
+        ItemStack hat = this.getItemBySlot(EquipmentSlot.HEAD);
+        if (itemStack.is(Items.SHEARS) && !hat.isEmpty()) {
+            this.level().playSound(null, this, SoundEvents.SNOW_GOLEM_SHEAR, SoundSource.PLAYERS, 1.0F, 1.0F);
+            this.gameEvent(GameEvent.SHEAR, player);
+
+            if (!this.level().isClientSide()) {
+                this.spawnAtLocation(hat);
+                this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+                itemStack.hurtAndBreak(1, player, getSlotForHand(hand));
+            }
+
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        } else if (this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
+            itemStack.consume(1, player);
+            this.setItemSlot(EquipmentSlot.MAINHAND, itemStack.copyWithCount(1));
+        }
+
         if ((this.temptGoal != null && !this.temptGoal.isRunning()) || this.isTrusting() || !this.isFood(itemStack) || !(player.distanceToSqr(this) < 9.0))
             return super.mobInteract(player, hand);
 
@@ -222,6 +245,29 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         return monkey;
     }
 
+    @Override
+    protected void dropAllDeathLoot(ServerLevel level, DamageSource damageSource) {
+        ItemStack handItem = this.getItemBySlot(EquipmentSlot.MAINHAND);
+        if (!handItem.isEmpty()) {
+            this.spawnAtLocation(handItem);
+            this.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        }
+
+        ItemStack headItem = this.getItemBySlot(EquipmentSlot.HEAD);
+        if (!headItem.isEmpty()) {
+            this.spawnAtLocation(headItem);
+            this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+        }
+
+        super.dropAllDeathLoot(level, damageSource);
+    }
+
+    @Override
+    public boolean canTakeItem(ItemStack stack) {
+        EquipmentSlot equipmentSlot = this.getEquipmentSlotForItem(stack);
+        return equipmentSlot == EquipmentSlot.HEAD && this.getItemBySlot(equipmentSlot).isEmpty();
+    }
+
     private static class MonkeyPanicGoal extends PanicGoal {
         private boolean hopping = false;
         private final CapuchinMonkey monkey;
@@ -333,7 +379,13 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         if (!this.onGround())
             return event.setAndContinue(STAND_ANIM);
 
-        return event.setAndContinue(SIT_ANIM);
+        if (event.isCurrentAnimation(SIT_ANIM))
+            return event.setAndContinue(SIT_ANIM);
+
+        if (event.isCurrentAnimation(SIT_UPRIGHT_ANIM))
+            return event.setAndContinue(SIT_UPRIGHT_ANIM);
+
+        return this.random.nextBoolean() ? event.setAndContinue(SIT_ANIM) : event.setAndContinue(SIT_UPRIGHT_ANIM);
     }
 
     @Override
@@ -343,7 +395,7 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
 
     public enum Variant implements StringRepresentable {
         HOODED(0, "hooded"),
-        OPTIC(1, "optic");
+        WHITE_FACED(1, "white_faced");
 
         public static final Codec<CapuchinMonkey.Variant> CODEC =
                 StringRepresentable.fromEnum(CapuchinMonkey.Variant::values);
