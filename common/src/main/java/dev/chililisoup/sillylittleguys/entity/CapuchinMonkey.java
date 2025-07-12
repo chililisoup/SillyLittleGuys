@@ -48,10 +48,11 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     /* TODO:
 
     - Make sure trusting works correctly
-    - Add correct foods to monkey food tag
     - Finish monkey texture
     - Add cool mechanics
     - Higher jump height w/ anim (similar to frog leaping?)
+    - Item equip might not correctly check delta movement. Fix or delete.
+    - GOD DAMN CHILDREN PASSENGERS
 
     */
 
@@ -61,10 +62,12 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     private static final EntityDimensions HOPPING_DIMENSIONS = EntityDimensions.scalable(0.6F, 1.5F).withEyeHeight(1.35F);
 
     protected static final RawAnimation SIT_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit");
-    protected static final RawAnimation SIT_UPRIGHT_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit_upright");
+    protected static final RawAnimation SIT_HOLD_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit_hold");
     protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.walk");
     protected static final RawAnimation STAND_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.stand");
     protected static final RawAnimation HOP_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.hop");
+    protected static final RawAnimation EQUIP_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.equip", Animation.LoopType.PLAY_ONCE);
+    protected static final RawAnimation UNEQUIP_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.unequip", Animation.LoopType.PLAY_ONCE);
 
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
     @Nullable private MonkeyAvoidEntityGoal<Player> monkeyAvoidPlayersGoal;
@@ -87,11 +90,12 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
 
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(1, new MonkeyPanicGoal(this, 1.75));
-        this.goalSelector.addGoal(3, this.temptGoal);
-        this.goalSelector.addGoal(4, new BreedGoal(this, 1.0));
-        this.goalSelector.addGoal(5, new FollowParentGoal(this, 1.1));
-        this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 1.0));
-        this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 6.0F));
+        this.goalSelector.addGoal(2, this.temptGoal);
+        this.goalSelector.addGoal(3, new BreedGoal(this, 1.0));
+        this.goalSelector.addGoal(4, new FollowParentGoal(this, 1.1));
+        this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 1.0));
+        this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F));
+        this.goalSelector.addGoal(7, new MonkeyEquipItemGoal(this));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
 
@@ -113,6 +117,62 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     }
 
     @Override
+    public void tick() {
+        super.tick();
+
+
+
+//        if (this.getDeltaMovement().lengthSqr() >= 0.015) {
+//            this.stopTriggeredAnim("controller", "equip");
+//            this.stopTriggeredAnim("controller", "unequip");
+//        }
+
+
+
+
+        if (this.isBaby() || this.getRandom().nextFloat() >= 0.001)
+            return;
+
+        if (this.getFirstPassenger() instanceof CapuchinMonkey monkey) {
+//            monkey.stopRiding();
+            return;
+        }
+
+        this.level().getEntities(
+                this,
+                this.getBoundingBox().inflate(0.5),
+                entity -> entity instanceof CapuchinMonkey monkey &&
+                        monkey.isBaby() &&
+                        monkey.getVehicle() == null
+        ).stream().findFirst().ifPresent(entity ->
+                entity.startRiding(this)
+        );
+    }
+
+    @Override
+    protected @NotNull Vec3 getPassengerAttachmentPoint(Entity entity, EntityDimensions dimensions, float partialTick) {
+        return super.getPassengerAttachmentPoint(entity, dimensions, partialTick).add(
+                new Vec3(0, -0.5, -0.2)
+                        .scale(this.getAgeScale() * this.getScale())
+                        .yRot(-this.getYRot() * ((float)Math.PI / 180F))
+        );
+    }
+
+    @Override
+    public boolean canControlVehicle() {
+        if (this.isBaby()) return false;
+        return super.canControlVehicle();
+    }
+
+    @Override
+    protected void ageBoundaryReached() {
+        super.ageBoundaryReached();
+
+        if (!this.isBaby() && this.getVehicle() instanceof CapuchinMonkey)
+            this.stopRiding();
+    }
+
+    @Override
     public @NotNull InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
         ItemStack hat = this.getItemBySlot(EquipmentSlot.HEAD);
@@ -130,6 +190,8 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         } else if (this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
             itemStack.consume(1, player);
             this.setItemSlot(EquipmentSlot.MAINHAND, itemStack.copyWithCount(1));
+
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
         }
 
         if ((this.temptGoal != null && !this.temptGoal.isRunning()) || this.isTrusting() || !this.isFood(itemStack) || !(player.distanceToSqr(this) < 9.0))
@@ -360,13 +422,91 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         }
     }
 
+    private static class MonkeyEquipItemGoal extends Goal {
+        private final CapuchinMonkey monkey;
+        private int equipTime;
+        private int equipDelay;
+
+        public MonkeyEquipItemGoal(CapuchinMonkey monkey) {
+            this.monkey = monkey;
+        }
+
+        private float swapInterest() {
+            ItemStack head = this.monkey.getItemBySlot(EquipmentSlot.HEAD);
+            ItemStack hand = this.monkey.getMainHandItem();
+
+            if (head.isEmpty())
+                return this.monkey.getEquipmentSlotForItem(hand) == EquipmentSlot.HEAD ? 0.01F : 0.001F;
+
+            if (hand.isEmpty())
+                return this.monkey.getEquipmentSlotForItem(head) == EquipmentSlot.HEAD ? 0.002F : 0.05F;
+
+            EquipmentSlot headSlot = this.monkey.getEquipmentSlotForItem(head);
+            EquipmentSlot handSlot = this.monkey.getEquipmentSlotForItem(hand);
+
+            if (headSlot == EquipmentSlot.HEAD && handSlot == EquipmentSlot.HEAD)
+                return this.monkey.canReplaceCurrentItem(hand, head) ? 0.01F : 0;
+
+            return handSlot == EquipmentSlot.HEAD ? 0.01F : 0;
+        }
+
+        public void start() {
+            this.equipTime = this.adjustedTickDelay(40 + this.monkey.getRandom().nextInt(40));
+            this.equipDelay = this.adjustedTickDelay(20);
+
+            this.monkey.triggerAnim(
+                    "equip_controller",
+                    this.monkey.getMainHandItem().isEmpty() ? "unequip" : "equip"
+            );
+        }
+
+        @Override
+        public boolean canUse() {
+            if (this.equipTime > 0)
+                return false;
+
+            if (this.monkey.getItemBySlot(EquipmentSlot.HEAD).isEmpty() && this.monkey.getMainHandItem().isEmpty())
+                return false;
+
+            if (monkey.getDeltaMovement().lengthSqr() >= 0.015)
+                return false;
+
+            return this.monkey.getRandom().nextFloat() < this.swapInterest();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return this.equipTime > 0;
+        }
+
+        @Override
+        public void tick() {
+            this.equipTime--;
+
+            if (this.equipDelay-- == 0) {
+                ItemStack head = this.monkey.getItemBySlot(EquipmentSlot.HEAD);
+                ItemStack hand = this.monkey.getMainHandItem();
+
+                this.monkey.setItemSlot(EquipmentSlot.MAINHAND, head);
+                this.monkey.setItemSlot(EquipmentSlot.HEAD, hand);
+            }
+        }
+    }
+
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(this, "controller", 5, this::animController));
+        controllers.add(new AnimationController<>(this, "equip_controller", 5, state -> PlayState.STOP)
+                .triggerableAnim("equip", EQUIP_ANIM)
+                .triggerableAnim("unequip", UNEQUIP_ANIM)
+        );
     }
 
     protected <E extends CapuchinMonkey> PlayState animController(final AnimationState<E> event) {
         event.setControllerSpeed(1);
+
+        if (this.getVehicle() != null)
+            return event.setAndContinue(STAND_ANIM);
 
         if (this.isHopping())
             return event.setAndContinue(HOP_ANIM);
@@ -379,13 +519,9 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         if (!this.onGround())
             return event.setAndContinue(STAND_ANIM);
 
-        if (event.isCurrentAnimation(SIT_ANIM))
-            return event.setAndContinue(SIT_ANIM);
-
-        if (event.isCurrentAnimation(SIT_UPRIGHT_ANIM))
-            return event.setAndContinue(SIT_UPRIGHT_ANIM);
-
-        return this.random.nextBoolean() ? event.setAndContinue(SIT_ANIM) : event.setAndContinue(SIT_UPRIGHT_ANIM);
+        return event.setAndContinue(
+                this.getMainHandItem().isEmpty() ? SIT_ANIM : SIT_HOLD_ANIM
+        );
     }
 
     @Override

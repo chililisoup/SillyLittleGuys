@@ -8,7 +8,7 @@ import java.util.Optional;
 
 public class ModEntitySubPredicates {
     public static final EntitySubPredicates.EntityVariantPredicateType<CapuchinMonkey.Variant> CAPUCHIN_MONKEY = register(
-            "parrot",
+            "capuchin_monkey",
             EntitySubPredicates.EntityVariantPredicateType.create(
                     CapuchinMonkey.Variant.CODEC, entity -> entity instanceof CapuchinMonkey monkey ? Optional.of(monkey.getVariant()) : Optional.empty()
             )
