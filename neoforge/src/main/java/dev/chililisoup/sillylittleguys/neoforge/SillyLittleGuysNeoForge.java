@@ -4,11 +4,12 @@ import com.mojang.serialization.MapCodec;
 import dev.chililisoup.sillylittleguys.SillyLittleGuys;
 import dev.chililisoup.sillylittleguys.neoforge.client.SillyLittleGuysClientNeoForge;
 import net.minecraft.advancements.critereon.EntitySubPredicate;
-import net.minecraft.advancements.critereon.EntitySubPredicates;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.ai.sensing.SensorType;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -33,6 +34,14 @@ public final class SillyLittleGuysNeoForge {
             BuiltInRegistries.ENTITY_SUB_PREDICATE_TYPE,
             SillyLittleGuys.MOD_ID
     );
+    public static final DeferredRegister<MemoryModuleType<?>> MEMORY_MODULE_TYPES = DeferredRegister.create(
+            BuiltInRegistries.MEMORY_MODULE_TYPE,
+            SillyLittleGuys.MOD_ID
+    );
+    public static final DeferredRegister<SensorType<?>> SENSOR_TYPES = DeferredRegister.create(
+            BuiltInRegistries.SENSOR_TYPE,
+            SillyLittleGuys.MOD_ID
+    );
     public static final ArrayList<EntityAttributesEntry<? extends LivingEntity>> ENTITY_ATTRIBUTES = new ArrayList<>();
 
     public SillyLittleGuysNeoForge(IEventBus eventBus) {
@@ -40,6 +49,8 @@ public final class SillyLittleGuysNeoForge {
 
         ITEMS.register(eventBus);
         ENTITY_TYPES.register(eventBus);
+        MEMORY_MODULE_TYPES.register(eventBus);
+        SENSOR_TYPES.register(eventBus);
 
         eventBus.addListener(SillyLittleGuysNeoForge::createDefaultAttributes);
 

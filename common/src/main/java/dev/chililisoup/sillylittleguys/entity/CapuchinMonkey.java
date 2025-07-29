@@ -1,12 +1,17 @@
 package dev.chililisoup.sillylittleguys.entity;
 
+import com.google.common.collect.ImmutableList;
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.Dynamic;
 import dev.chililisoup.sillylittleguys.reg.ModEntities;
 import dev.chililisoup.sillylittleguys.reg.ModItemTags;
+import dev.chililisoup.sillylittleguys.reg.ModMemoryModuleTypes;
+import dev.chililisoup.sillylittleguys.reg.ModSensorTypes;
 import net.minecraft.Util;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.DebugPackets;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -20,19 +25,22 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.*;
-import net.minecraft.world.entity.ai.util.DefaultRandomPos;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.ai.sensing.Sensor;
+import net.minecraft.world.entity.ai.sensing.SensorType;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoEntity;
@@ -42,17 +50,17 @@ import software.bernie.geckolib.animation.AnimationState;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
 import java.util.function.IntFunction;
-import java.util.function.Predicate;
 
 public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<CapuchinMonkey.Variant> {
     /* TODO:
 
-    - Make sure trusting works correctly
-    - Finish monkey texture
+    - Hand monkey food a few times for it to eat to tame it
+    - Sounds
     - Add cool mechanics
     - Higher jump height w/ anim (similar to frog leaping?)
-    - Item equip might not correctly check delta movement. Fix or delete.
-    - GOD DAMN CHILDREN PASSENGERS
+    - Dancing
+    - Fighting??
+    - Drop items they dont care about?
 
     */
 
@@ -70,12 +78,53 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     protected static final RawAnimation UNEQUIP_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.unequip", Animation.LoopType.PLAY_ONCE);
 
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
-    @Nullable private MonkeyAvoidEntityGoal<Player> monkeyAvoidPlayersGoal;
-    @Nullable private MonkeyTemptGoal temptGoal;
+
+
+    protected static final ImmutableList<SensorType<? extends Sensor<? super CapuchinMonkey>>> SENSOR_TYPES = ImmutableList.of(
+            SensorType.NEAREST_LIVING_ENTITIES,
+            SensorType.NEAREST_PLAYERS,
+            SensorType.NEAREST_ITEMS,
+            SensorType.NEAREST_ADULT,
+            SensorType.HURT_BY,
+            ModSensorTypes.MONKEY_TEMPTATIONS.get()
+    );
+    protected static final ImmutableList<MemoryModuleType<?>> MEMORY_TYPES = ImmutableList.of(
+            MemoryModuleType.LOOK_TARGET,
+            MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES,
+            MemoryModuleType.WALK_TARGET,
+            MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE,
+            MemoryModuleType.PATH,
+            MemoryModuleType.ATE_RECENTLY,
+            MemoryModuleType.BREED_TARGET,
+            ModMemoryModuleTypes.EQUIP_COOLDOWN_TICKS.get(),
+            ModMemoryModuleTypes.MID_EQUIP.get(),
+            ModMemoryModuleTypes.HOP_COOLDOWN_TICKS.get(),
+            MemoryModuleType.TEMPTING_PLAYER,
+            MemoryModuleType.NEAREST_VISIBLE_ADULT,
+            MemoryModuleType.TEMPTATION_COOLDOWN_TICKS,
+            MemoryModuleType.IS_TEMPTED,
+            MemoryModuleType.IS_PANICKING,
+            MemoryModuleType.ADMIRING_ITEM
+    );
 
     public CapuchinMonkey(EntityType<? extends CapuchinMonkey> entityType, Level level) {
         super(entityType, level);
-        this.reassessTrustingGoals();
+    }
+
+    @Override
+    protected @NotNull Brain.Provider<CapuchinMonkey> brainProvider() {
+        return Brain.provider(MEMORY_TYPES, SENSOR_TYPES);
+    }
+
+    @Override
+    protected @NotNull Brain<CapuchinMonkey> makeBrain(Dynamic<?> dynamic) {
+        return CapuchinMonkeyAi.makeBrain(this.brainProvider().makeBrain(dynamic));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public @NotNull Brain<CapuchinMonkey> getBrain() {
+        return (Brain<CapuchinMonkey>) super.getBrain();
     }
 
     @Override
@@ -85,98 +134,35 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     }
 
     @Override
-    protected void registerGoals() {
-        this.temptGoal = new MonkeyTemptGoal(this, 1.2, itemStack -> itemStack.is(ModItemTags.MONKEY_FOOD), true);
-
-        this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new MonkeyPanicGoal(this, 1.75));
-        this.goalSelector.addGoal(2, this.temptGoal);
-        this.goalSelector.addGoal(3, new BreedGoal(this, 1.0));
-        this.goalSelector.addGoal(4, new FollowParentGoal(this, 1.1));
-        this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 1.0));
-        this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F));
-        this.goalSelector.addGoal(7, new MonkeyEquipItemGoal(this));
-        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
+    protected void sendDebugPackets() {
+        super.sendDebugPackets();
+        DebugPackets.sendEntityBrain(this);
     }
 
-    boolean isTrusting() {
-        return this.entityData.get(DATA_TRUSTING);
+    @Override
+    protected void customServerAiStep() {
+        this.level().getProfiler().push("slg_capuchinMonkeyBrain");
+        this.getBrain().tick((ServerLevel) this.level(), this);
+        this.level().getProfiler().pop();
+        this.level().getProfiler().push("slg_capuchinMonkeyActivityUpdate");
+        CapuchinMonkeyAi.updateActivity(this);
+        this.level().getProfiler().pop();
+        super.customServerAiStep();
     }
 
-    private void setTrusting(boolean trusting) {
-        this.entityData.set(DATA_TRUSTING, trusting);
-        this.reassessTrustingGoals();
-    }
-
-    boolean isHopping() {
+    public boolean isHopping() {
         return this.entityData.get(DATA_HOPPING);
     }
 
-    private void setHopping(boolean hopping) {
+    public void setHopping(boolean hopping) {
         this.entityData.set(DATA_HOPPING, hopping);
-    }
-
-    @Override
-    public void tick() {
-        super.tick();
-
-
-
-//        if (this.getDeltaMovement().lengthSqr() >= 0.015) {
-//            this.stopTriggeredAnim("controller", "equip");
-//            this.stopTriggeredAnim("controller", "unequip");
-//        }
-
-
-
-
-        if (this.isBaby() || this.getRandom().nextFloat() >= 0.001)
-            return;
-
-        if (this.getFirstPassenger() instanceof CapuchinMonkey monkey) {
-//            monkey.stopRiding();
-            return;
-        }
-
-        this.level().getEntities(
-                this,
-                this.getBoundingBox().inflate(0.5),
-                entity -> entity instanceof CapuchinMonkey monkey &&
-                        monkey.isBaby() &&
-                        monkey.getVehicle() == null
-        ).stream().findFirst().ifPresent(entity ->
-                entity.startRiding(this)
-        );
-    }
-
-    @Override
-    protected @NotNull Vec3 getPassengerAttachmentPoint(Entity entity, EntityDimensions dimensions, float partialTick) {
-        return super.getPassengerAttachmentPoint(entity, dimensions, partialTick).add(
-                new Vec3(0, -0.5, -0.2)
-                        .scale(this.getAgeScale() * this.getScale())
-                        .yRot(-this.getYRot() * ((float)Math.PI / 180F))
-        );
-    }
-
-    @Override
-    public boolean canControlVehicle() {
-        if (this.isBaby()) return false;
-        return super.canControlVehicle();
-    }
-
-    @Override
-    protected void ageBoundaryReached() {
-        super.ageBoundaryReached();
-
-        if (!this.isBaby() && this.getVehicle() instanceof CapuchinMonkey)
-            this.stopRiding();
     }
 
     @Override
     public @NotNull InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
         ItemStack hat = this.getItemBySlot(EquipmentSlot.HEAD);
-        if (itemStack.is(Items.SHEARS) && !hat.isEmpty()) {
+        if (itemStack.is(Items.SHEARS) && !hat.isEmpty() && !EnchantmentHelper.has(hat, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
             this.level().playSound(null, this, SoundEvents.SNOW_GOLEM_SHEAR, SoundSource.PLAYERS, 1.0F, 1.0F);
             this.gameEvent(GameEvent.SHEAR, player);
 
@@ -187,31 +173,14 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
             }
 
             return InteractionResult.sidedSuccess(this.level().isClientSide);
-        } else if (this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
+        } else if (!itemStack.isEmpty() && this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
             itemStack.consume(1, player);
             this.setItemSlot(EquipmentSlot.MAINHAND, itemStack.copyWithCount(1));
 
             return InteractionResult.sidedSuccess(this.level().isClientSide);
         }
 
-        if ((this.temptGoal != null && !this.temptGoal.isRunning()) || this.isTrusting() || !this.isFood(itemStack) || !(player.distanceToSqr(this) < 9.0))
-            return super.mobInteract(player, hand);
-
-        this.usePlayerItem(player, hand, itemStack);
-
-        if (this.level().isClientSide)
-            return InteractionResult.SUCCESS;
-
-        if (this.random.nextInt(3) == 0) {
-            this.setTrusting(true);
-            this.spawnTrustingParticles(true);
-            this.level().broadcastEntityEvent(this, (byte)41);
-        } else {
-            this.spawnTrustingParticles(false);
-            this.level().broadcastEntityEvent(this, (byte)40);
-        }
-
-        return InteractionResult.CONSUME;
+        return super.mobInteract(player, hand);
     }
 
     @Override
@@ -232,16 +201,6 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         }
     }
 
-    protected void reassessTrustingGoals() {
-        if (this.monkeyAvoidPlayersGoal == null) {
-            this.monkeyAvoidPlayersGoal = new MonkeyAvoidEntityGoal<>(this, Player.class, 16.0F, 1.5, 1.875);
-        }
-
-        this.goalSelector.removeGoal(this.monkeyAvoidPlayersGoal);
-        if (!this.isTrusting())
-            this.goalSelector.addGoal(4, this.monkeyAvoidPlayersGoal);
-    }
-
     public CapuchinMonkey.@NotNull Variant getVariant() {
         return CapuchinMonkey.Variant.byId(this.entityData.get(DATA_VARIANT_ID));
     }
@@ -253,14 +212,12 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     @Override
     public void addAdditionalSaveData(CompoundTag compound) {
         super.addAdditionalSaveData(compound);
-        compound.putBoolean("Trusting", this.isTrusting());
         compound.putInt("Variant", this.getVariant().id);
     }
 
     @Override
     public void readAdditionalSaveData(CompoundTag compound) {
         super.readAdditionalSaveData(compound);
-        this.setTrusting(compound.getBoolean("Trusting"));
         this.setVariant(CapuchinMonkey.Variant.byId(compound.getInt("Variant")));
     }
 
@@ -330,167 +287,25 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         return equipmentSlot == EquipmentSlot.HEAD && this.getItemBySlot(equipmentSlot).isEmpty();
     }
 
-    private static class MonkeyPanicGoal extends PanicGoal {
-        private boolean hopping = false;
-        private final CapuchinMonkey monkey;
+    public float swapInterest() {
+        ItemStack head = this.getItemBySlot(EquipmentSlot.HEAD);
+        ItemStack hand = this.getMainHandItem();
 
-        public MonkeyPanicGoal(CapuchinMonkey monkey, double speedModifier) {
-            super(monkey, speedModifier);
-            this.monkey = monkey;
-        }
+        if (head.isEmpty())
+            return this.getEquipmentSlotForItem(hand) == EquipmentSlot.HEAD ? 0.15F : 0.015F;
+        else if (EnchantmentHelper.has(head, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE))
+            return 0;
 
-        protected boolean findRandomPosition(double scale) {
-            for (int i = 0; i < 32; i++) {
-                Vec3 vec3 = DefaultRandomPos.getPos(this.mob, (int) (10 * scale), (int) (4 * scale));
-                if (vec3 != null) {
-                    this.posX = vec3.x;
-                    this.posY = vec3.y;
-                    this.posZ = vec3.z;
-                    return true;
-                }
-            }
+        if (hand.isEmpty())
+            return this.getEquipmentSlotForItem(head) == EquipmentSlot.HEAD ? 0.03F : 0.75F;
 
-            return false;
-        }
+        EquipmentSlot headSlot = this.getEquipmentSlotForItem(head);
+        EquipmentSlot handSlot = this.getEquipmentSlotForItem(hand);
 
-        @Override
-        protected boolean findRandomPosition() {
-            return this.findRandomPosition(1);
-        }
+        if (headSlot == EquipmentSlot.HEAD && handSlot == EquipmentSlot.HEAD)
+            return this.canReplaceCurrentItem(hand, head) ? 0.15F : 0;
 
-        @Override
-        public boolean canContinueToUse() {
-            if (super.canContinueToUse()) return true;
-            if (!this.hopping) return false;
-
-            this.monkey.setHopping(false);
-            this.hopping = false;
-
-            if (!this.findRandomPosition(4)) return false;
-
-            this.mob.getNavigation().stop();
-            this.mob.getNavigation().moveTo(this.posX, this.posY, this.posZ, this.speedModifier * 1.25);
-            return true;
-        }
-
-        @Override
-        public void start() {
-            this.monkey.setHopping(true);
-            this.hopping = true;
-            this.mob.getNavigation().moveTo(this.posX, this.posY, this.posZ, this.speedModifier);
-            this.isRunning = true;
-        }
-
-        @Override
-        public void stop() {
-            this.monkey.setHopping(false);
-            this.hopping = false;
-            this.isRunning = false;
-        }
-    }
-
-    private static class MonkeyAvoidEntityGoal<T extends LivingEntity> extends AvoidEntityGoal<T> {
-        private final CapuchinMonkey monkey;
-
-        public MonkeyAvoidEntityGoal(CapuchinMonkey monkey, Class<T> entityClassToAvoid, float maxDist, double walkSpeedModifier, double sprintSpeedModifier) {
-            super(monkey, entityClassToAvoid, maxDist, walkSpeedModifier, sprintSpeedModifier, EntitySelector.NO_CREATIVE_OR_SPECTATOR::test);
-            this.monkey = monkey;
-        }
-
-        @Override
-        public boolean canUse() {
-            return !this.monkey.isTrusting() && super.canUse();
-        }
-
-        @Override
-        public boolean canContinueToUse() {
-            return !this.monkey.isTrusting() && super.canContinueToUse();
-        }
-    }
-
-    private static class MonkeyTemptGoal extends TemptGoal {
-        private final CapuchinMonkey monkey;
-
-        public MonkeyTemptGoal(CapuchinMonkey monkey, double speedModifier, Predicate<ItemStack> items, boolean canScare) {
-            super(monkey, speedModifier, items, canScare);
-            this.monkey = monkey;
-        }
-
-        @Override
-        protected boolean canScare() {
-            return super.canScare() && !this.monkey.isTrusting();
-        }
-    }
-
-    private static class MonkeyEquipItemGoal extends Goal {
-        private final CapuchinMonkey monkey;
-        private int equipTime;
-        private int equipDelay;
-
-        public MonkeyEquipItemGoal(CapuchinMonkey monkey) {
-            this.monkey = monkey;
-        }
-
-        private float swapInterest() {
-            ItemStack head = this.monkey.getItemBySlot(EquipmentSlot.HEAD);
-            ItemStack hand = this.monkey.getMainHandItem();
-
-            if (head.isEmpty())
-                return this.monkey.getEquipmentSlotForItem(hand) == EquipmentSlot.HEAD ? 0.01F : 0.001F;
-
-            if (hand.isEmpty())
-                return this.monkey.getEquipmentSlotForItem(head) == EquipmentSlot.HEAD ? 0.002F : 0.05F;
-
-            EquipmentSlot headSlot = this.monkey.getEquipmentSlotForItem(head);
-            EquipmentSlot handSlot = this.monkey.getEquipmentSlotForItem(hand);
-
-            if (headSlot == EquipmentSlot.HEAD && handSlot == EquipmentSlot.HEAD)
-                return this.monkey.canReplaceCurrentItem(hand, head) ? 0.01F : 0;
-
-            return handSlot == EquipmentSlot.HEAD ? 0.01F : 0;
-        }
-
-        public void start() {
-            this.equipTime = this.adjustedTickDelay(40 + this.monkey.getRandom().nextInt(40));
-            this.equipDelay = this.adjustedTickDelay(20);
-
-            this.monkey.triggerAnim(
-                    "equip_controller",
-                    this.monkey.getMainHandItem().isEmpty() ? "unequip" : "equip"
-            );
-        }
-
-        @Override
-        public boolean canUse() {
-            if (this.equipTime > 0)
-                return false;
-
-            if (this.monkey.getItemBySlot(EquipmentSlot.HEAD).isEmpty() && this.monkey.getMainHandItem().isEmpty())
-                return false;
-
-            if (monkey.getDeltaMovement().lengthSqr() >= 0.015)
-                return false;
-
-            return this.monkey.getRandom().nextFloat() < this.swapInterest();
-        }
-
-        @Override
-        public boolean canContinueToUse() {
-            return this.equipTime > 0;
-        }
-
-        @Override
-        public void tick() {
-            this.equipTime--;
-
-            if (this.equipDelay-- == 0) {
-                ItemStack head = this.monkey.getItemBySlot(EquipmentSlot.HEAD);
-                ItemStack hand = this.monkey.getMainHandItem();
-
-                this.monkey.setItemSlot(EquipmentSlot.MAINHAND, head);
-                this.monkey.setItemSlot(EquipmentSlot.HEAD, hand);
-            }
-        }
+        return handSlot == EquipmentSlot.HEAD ? 0.15F : 0;
     }
 
     @Override
