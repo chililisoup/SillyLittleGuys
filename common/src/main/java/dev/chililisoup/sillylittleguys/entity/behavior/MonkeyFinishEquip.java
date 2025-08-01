@@ -31,8 +31,8 @@ public class MonkeyFinishEquip extends Behavior<CapuchinMonkey> {
 
     @Override
     protected void stop(ServerLevel level, CapuchinMonkey monkey, long gameTime) {
-        monkey.stopTriggeredAnim("equip_controller", "equip");
-        monkey.stopTriggeredAnim("equip_controller", "unequip");
+        monkey.stopTriggeredAnim("arm_controller", "equip");
+        monkey.stopTriggeredAnim("arm_controller", "unequip");
 
         monkey.getBrain().eraseMemory(MemoryModuleType.ADMIRING_ITEM);
         monkey.getBrain().eraseMemory(ModMemoryModuleTypes.MID_EQUIP.get());

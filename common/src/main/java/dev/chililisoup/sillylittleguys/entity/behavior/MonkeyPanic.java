@@ -29,6 +29,9 @@ public class MonkeyPanic extends AnimalPanic<CapuchinMonkey> {
 
     @Override
     protected void tick(ServerLevel level, CapuchinMonkey monkey, long gameTime) {
+        if (!monkey.unableToMoveToOwner() && monkey.shouldTryTeleportToOwner())
+            monkey.tryToTeleportToOwner();
+
         if (monkey.isHopping() && !monkey.getBrain().hasMemoryValue(ModMemoryModuleTypes.HOP_COOLDOWN_TICKS.get()))
             monkey.setHopping(false);
 

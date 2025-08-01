@@ -1,13 +1,10 @@
 package dev.chililisoup.sillylittleguys.reg;
 
-import com.mojang.serialization.Codec;
 import dev.architectury.injectables.annotations.ExpectPlatform;
 import dev.chililisoup.sillylittleguys.entity.CapuchinMonkeyAi;
-import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.sensing.Sensor;
 import net.minecraft.world.entity.ai.sensing.SensorType;
 import net.minecraft.world.entity.ai.sensing.TemptingSensor;
-import net.minecraft.world.entity.animal.goat.GoatAi;
 
 import java.util.function.Supplier;
 

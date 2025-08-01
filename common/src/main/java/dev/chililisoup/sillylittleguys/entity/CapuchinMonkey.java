@@ -1,15 +1,11 @@
 package dev.chililisoup.sillylittleguys.entity;
 
-import com.google.common.collect.ImmutableList;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
 import dev.chililisoup.sillylittleguys.reg.ModEntities;
 import dev.chililisoup.sillylittleguys.reg.ModItemTags;
 import dev.chililisoup.sillylittleguys.reg.ModMemoryModuleTypes;
-import dev.chililisoup.sillylittleguys.reg.ModSensorTypes;
 import net.minecraft.Util;
-import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.DebugPackets;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -29,8 +25,6 @@ import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
-import net.minecraft.world.entity.ai.sensing.Sensor;
-import net.minecraft.world.entity.ai.sensing.SensorType;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -51,16 +45,16 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 
 import java.util.function.IntFunction;
 
-public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<CapuchinMonkey.Variant> {
+public class CapuchinMonkey extends TamableAnimal implements GeoEntity, VariantHolder<CapuchinMonkey.Variant> {
     /* TODO:
 
-    - Hand monkey food a few times for it to eat to tame it
     - Sounds
     - Add cool mechanics
     - Higher jump height w/ anim (similar to frog leaping?)
     - Dancing
     - Fighting??
-    - Drop items they dont care about?
+    - Drop items they don't care about?
+    - Spawning
 
     */
 
@@ -73,39 +67,13 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     protected static final RawAnimation SIT_HOLD_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.sit_hold");
     protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.walk");
     protected static final RawAnimation STAND_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.stand");
+    protected static final RawAnimation STAND_HOLD_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.stand_hold");
     protected static final RawAnimation HOP_ANIM = RawAnimation.begin().thenLoop("animation.capuchin_monkey.hop");
     protected static final RawAnimation EQUIP_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.equip", Animation.LoopType.PLAY_ONCE);
     protected static final RawAnimation UNEQUIP_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.unequip", Animation.LoopType.PLAY_ONCE);
+    protected static final RawAnimation CONSUME_ANIM = RawAnimation.begin().then("animation.capuchin_monkey.consume", Animation.LoopType.PLAY_ONCE);
 
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
-
-
-    protected static final ImmutableList<SensorType<? extends Sensor<? super CapuchinMonkey>>> SENSOR_TYPES = ImmutableList.of(
-            SensorType.NEAREST_LIVING_ENTITIES,
-            SensorType.NEAREST_PLAYERS,
-            SensorType.NEAREST_ITEMS,
-            SensorType.NEAREST_ADULT,
-            SensorType.HURT_BY,
-            ModSensorTypes.MONKEY_TEMPTATIONS.get()
-    );
-    protected static final ImmutableList<MemoryModuleType<?>> MEMORY_TYPES = ImmutableList.of(
-            MemoryModuleType.LOOK_TARGET,
-            MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES,
-            MemoryModuleType.WALK_TARGET,
-            MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE,
-            MemoryModuleType.PATH,
-            MemoryModuleType.ATE_RECENTLY,
-            MemoryModuleType.BREED_TARGET,
-            ModMemoryModuleTypes.EQUIP_COOLDOWN_TICKS.get(),
-            ModMemoryModuleTypes.MID_EQUIP.get(),
-            ModMemoryModuleTypes.HOP_COOLDOWN_TICKS.get(),
-            MemoryModuleType.TEMPTING_PLAYER,
-            MemoryModuleType.NEAREST_VISIBLE_ADULT,
-            MemoryModuleType.TEMPTATION_COOLDOWN_TICKS,
-            MemoryModuleType.IS_TEMPTED,
-            MemoryModuleType.IS_PANICKING,
-            MemoryModuleType.ADMIRING_ITEM
-    );
 
     public CapuchinMonkey(EntityType<? extends CapuchinMonkey> entityType, Level level) {
         super(entityType, level);
@@ -113,7 +81,7 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
 
     @Override
     protected @NotNull Brain.Provider<CapuchinMonkey> brainProvider() {
-        return Brain.provider(MEMORY_TYPES, SENSOR_TYPES);
+        return CapuchinMonkeyAi.brainProvider();
     }
 
     @Override
@@ -158,47 +126,102 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         this.entityData.set(DATA_HOPPING, hopping);
     }
 
+    public boolean isTrusting() {
+        return this.getBrain().hasMemoryValue(MemoryModuleType.LIKED_PLAYER);
+    }
+
+    @Override
+    public boolean canFallInLove() {
+        return super.canFallInLove() && this.isTrusting();
+    }
+
+    @Override
+    public boolean canMate(Animal otherAnimal) {
+        if (otherAnimal == this) return false;
+        if (!this.isTrusting()) return false;
+        if (!(otherAnimal instanceof CapuchinMonkey monkey)) return false;
+        if (!monkey.isTrusting()) return false;
+        if (monkey.isInSittingPose()) return false;
+        return this.isInLove() && monkey.isInLove();
+    }
+
     @Override
     public @NotNull InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
-        ItemStack hat = this.getItemBySlot(EquipmentSlot.HEAD);
-        if (itemStack.is(Items.SHEARS) && !hat.isEmpty() && !EnchantmentHelper.has(hat, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
-            this.level().playSound(null, this, SoundEvents.SNOW_GOLEM_SHEAR, SoundSource.PLAYERS, 1.0F, 1.0F);
-            this.gameEvent(GameEvent.SHEAR, player);
+        if (!itemStack.isEmpty()) {
+            if (!player.isShiftKeyDown() && this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
+                if (this.restrictPlayerModifyItems()) return InteractionResult.PASS;
 
-            if (!this.level().isClientSide()) {
-                this.spawnAtLocation(hat);
-                this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
-                itemStack.hurtAndBreak(1, player, getSlotForHand(hand));
+                Brain<CapuchinMonkey> brain = this.getBrain();
+                if (!this.isTrusting()) {
+                    if (this.isBaby() || !this.isFood(itemStack))
+                        return InteractionResult.PASS;
+
+                    if (!CapuchinMonkeyAi.tryBeginTrustingActivity(brain, player))
+                        return InteractionResult.PASS;
+                }
+
+                itemStack.consume(1, player);
+                this.setItemSlot(EquipmentSlot.MAINHAND, itemStack.copyWithCount(1));
+
+                return InteractionResult.sidedSuccess(this.level().isClientSide);
             }
 
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
-        } else if (!itemStack.isEmpty() && this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
-            itemStack.consume(1, player);
-            this.setItemSlot(EquipmentSlot.MAINHAND, itemStack.copyWithCount(1));
+            ItemStack hat;
+            if (
+                    this.isTrusting() &&
+                    itemStack.is(Items.SHEARS) &&
+                    !(hat = this.getItemBySlot(EquipmentSlot.HEAD)).isEmpty() &&
+                    !EnchantmentHelper.has(hat, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)
+            ) {
+                if (this.restrictPlayerModifyItems())
+                    return InteractionResult.PASS;
 
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+                this.level().playSound(null, this, SoundEvents.SNOW_GOLEM_SHEAR, SoundSource.PLAYERS, 1.0F, 1.0F);
+                this.gameEvent(GameEvent.SHEAR, player);
+
+                if (!this.level().isClientSide()) {
+                    this.spawnAtLocation(hat);
+                    this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+                    itemStack.hurtAndBreak(1, player, getSlotForHand(hand));
+                }
+
+                return InteractionResult.sidedSuccess(this.level().isClientSide);
+            }
+        } else if (player.isShiftKeyDown() && this.isTrusting()) {
+            ItemStack heldStack =  this.getItemBySlot(EquipmentSlot.MAINHAND);
+
+            if (!heldStack.isEmpty()) {
+                if (!this.level().isClientSide()) {
+                    this.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+                    player.setItemInHand(hand, heldStack);
+                }
+
+                return InteractionResult.sidedSuccess(this.level().isClientSide);
+            }
         }
 
-        return super.mobInteract(player, hand);
+        InteractionResult interactionResult = super.mobInteract(player, hand);
+        if (!interactionResult.consumesAction() && this.isOwnedBy(player)) {
+            this.setOrderedToSit(!this.isOrderedToSit());
+            this.jumping = false;
+            this.navigation.stop();
+            this.setTarget(null);
+            return InteractionResult.SUCCESS_NO_ITEM_USED;
+        }
+
+        return interactionResult;
     }
 
     @Override
-    public void handleEntityEvent(byte id) {
-        if (id == 41) this.spawnTrustingParticles(true);
-        else if (id == 40) this.spawnTrustingParticles(false);
-        else super.handleEntityEvent(id);
-    }
+    public boolean hurt(DamageSource source, float amount) {
+        if (this.isInvulnerableTo(source))
+            return false;
 
-    private void spawnTrustingParticles(boolean isTrusted) {
-        ParticleOptions particleOptions = isTrusted ? ParticleTypes.HEART : ParticleTypes.SMOKE;
+        if (!this.level().isClientSide)
+            this.setOrderedToSit(false);
 
-        for (int i = 0; i < 7; i++) {
-            double d = this.random.nextGaussian() * 0.02;
-            double e = this.random.nextGaussian() * 0.02;
-            double f = this.random.nextGaussian() * 0.02;
-            this.level().addParticle(particleOptions, this.getRandomX(1.0), this.getRandomY() + 0.5, this.getRandomZ(1.0), d, e, f);
-        }
+        return super.hurt(source, amount);
     }
 
     public CapuchinMonkey.@NotNull Variant getVariant() {
@@ -251,6 +274,18 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     }
 
     @Override
+    public void handleEntityEvent(byte id) {
+        if (id == 41) this.spawnTrustingParticles(true);
+        else if (id == 40) this.spawnTrustingParticles(false);
+        else super.handleEntityEvent(id);
+    }
+
+    public void spawnTrustingParticles(boolean trusting) {
+        // Might make unique some day
+        this.spawnTamingParticles(trusting);
+    }
+
+    @Override
     public boolean isFood(ItemStack stack) {
         return stack.is(ModItemTags.MONKEY_FOOD);
     }
@@ -258,8 +293,15 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     @Override
     public @Nullable AgeableMob getBreedOffspring(ServerLevel level, AgeableMob otherParent) {
         CapuchinMonkey monkey = ModEntities.CAPUCHIN_MONKEY.get().create(level);
-        if (monkey != null)
-            monkey.setVariant(this.random.nextBoolean() ? this.getVariant() : ((CapuchinMonkey) otherParent).getVariant());
+        if (monkey != null && otherParent instanceof CapuchinMonkey otherParentMonkey) {
+            this.getBrain().getMemory(MemoryModuleType.LIKED_PLAYER).ifPresent(playerUUID -> {
+                monkey.setOwnerUUID(playerUUID);
+                monkey.setTame(true, true);
+                monkey.getBrain().setMemory(MemoryModuleType.LIKED_PLAYER, playerUUID);
+            });
+
+            monkey.setVariant(this.random.nextBoolean() ? this.getVariant() : otherParentMonkey.getVariant());
+        }
 
         return monkey;
     }
@@ -282,9 +324,31 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     }
 
     @Override
+    public void hurtArmor(DamageSource damageSource, float damageAmount) {
+        this.hurtHelmet(damageSource, damageAmount);
+    }
+
+    @Override
+    public void hurtHelmet(DamageSource damageSource, float damageAmount) {
+        this.doHurtEquipment(damageSource, damageAmount, EquipmentSlot.HEAD);
+    }
+
+    @Override
     public boolean canTakeItem(ItemStack stack) {
         EquipmentSlot equipmentSlot = this.getEquipmentSlotForItem(stack);
         return equipmentSlot == EquipmentSlot.HEAD && this.getItemBySlot(equipmentSlot).isEmpty();
+    }
+
+    public boolean isHoldingFood() {
+        return this.isFood(this.getMainHandItem());
+    }
+
+    public boolean restrictPlayerModifyItems() {
+        Brain<CapuchinMonkey> brain = this.getBrain();
+        return brain.hasMemoryValue(MemoryModuleType.IS_PANICKING) ||
+                brain.hasMemoryValue(MemoryModuleType.BREED_TARGET) ||
+                brain.hasMemoryValue(MemoryModuleType.ADMIRING_ITEM) ||
+                brain.hasMemoryValue(ModMemoryModuleTypes.IS_PRIVATELY_EATING.get());
     }
 
     public float swapInterest() {
@@ -311,9 +375,10 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(this, "controller", 5, this::animController));
-        controllers.add(new AnimationController<>(this, "equip_controller", 5, state -> PlayState.STOP)
+        controllers.add(new AnimationController<>(this, "arm_controller", 5, state -> PlayState.STOP)
                 .triggerableAnim("equip", EQUIP_ANIM)
                 .triggerableAnim("unequip", UNEQUIP_ANIM)
+                .triggerableAnim("consume", CONSUME_ANIM)
         );
     }
 
@@ -334,8 +399,9 @@ public class CapuchinMonkey extends Animal implements GeoEntity, VariantHolder<C
         if (!this.onGround())
             return event.setAndContinue(STAND_ANIM);
 
-        return event.setAndContinue(
-                this.getMainHandItem().isEmpty() ? SIT_ANIM : SIT_HOLD_ANIM
+        return event.setAndContinue(this.isInSittingPose() || !this.isTame() ?
+                (this.getMainHandItem().isEmpty() ? SIT_ANIM : SIT_HOLD_ANIM) :
+                (this.getMainHandItem().isEmpty() ? STAND_ANIM : STAND_HOLD_ANIM)
         );
     }
 

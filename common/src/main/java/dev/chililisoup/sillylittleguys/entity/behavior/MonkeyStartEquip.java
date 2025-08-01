@@ -21,7 +21,7 @@ public class MonkeyStartEquip extends Behavior<CapuchinMonkey> {
     @Override
     protected void start(ServerLevel level, CapuchinMonkey monkey, long gameTime) {
         monkey.triggerAnim(
-                "equip_controller",
+                "arm_controller",
                 monkey.getMainHandItem().isEmpty() ? "unequip" : "equip"
         );
 
@@ -58,8 +58,8 @@ public class MonkeyStartEquip extends Behavior<CapuchinMonkey> {
     @Override
     protected void stop(ServerLevel level, CapuchinMonkey monkey, long gameTime) {
         if (!this.canStillUse(level, monkey, gameTime)) {
-            monkey.stopTriggeredAnim("equip_controller", "equip");
-            monkey.stopTriggeredAnim("equip_controller", "unequip");
+            monkey.stopTriggeredAnim("arm_controller", "equip");
+            monkey.stopTriggeredAnim("arm_controller", "unequip");
 
             monkey.getBrain().eraseMemory(MemoryModuleType.ADMIRING_ITEM);
             return;
