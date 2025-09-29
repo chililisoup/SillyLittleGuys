@@ -6,6 +6,7 @@ import dev.chililisoup.sillylittleguys.reg.ModEntities;
 import dev.chililisoup.sillylittleguys.reg.ModItemTags;
 import dev.chililisoup.sillylittleguys.reg.ModMemoryModuleTypes;
 import net.minecraft.Util;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.DebugPackets;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -15,6 +16,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.ByIdMap;
+import net.minecraft.util.RandomSource;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
@@ -32,6 +34,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
@@ -54,7 +57,6 @@ public class CapuchinMonkey extends TamableAnimal implements GeoEntity, VariantH
     - Dancing
     - Fighting??
     - Drop items they don't care about?
-    - Spawning
 
     */
 
@@ -97,7 +99,12 @@ public class CapuchinMonkey extends TamableAnimal implements GeoEntity, VariantH
 
     @Override
     public @NotNull SpawnGroupData finalizeSpawn(ServerLevelAccessor level, DifficultyInstance difficulty, MobSpawnType spawnType, @Nullable SpawnGroupData spawnGroupData) {
-        this.setVariant(Util.getRandom(Variant.values(), level.getRandom()));
+        if (spawnGroupData == null) spawnGroupData = new CapuchinMonkeyGroupData(
+                0.3F,
+                Util.getRandom(Variant.values(), level.getRandom())
+        );
+        this.setVariant(((CapuchinMonkeyGroupData) spawnGroupData).getGroupVariant());
+
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData);
     }
 
@@ -290,6 +297,10 @@ public class CapuchinMonkey extends TamableAnimal implements GeoEntity, VariantH
         return stack.is(ModItemTags.MONKEY_FOOD);
     }
 
+    public static boolean checkCapuchinMonkeySpawnRules(EntityType<CapuchinMonkey> monkey, LevelAccessor level, MobSpawnType spawnType, BlockPos pos, RandomSource random) {
+        return random.nextInt(3) != 0;
+    }
+
     @Override
     public @Nullable AgeableMob getBreedOffspring(ServerLevel level, AgeableMob otherParent) {
         CapuchinMonkey monkey = ModEntities.CAPUCHIN_MONKEY.get().create(level);
@@ -437,6 +448,19 @@ public class CapuchinMonkey extends TamableAnimal implements GeoEntity, VariantH
         @Override
         public @NotNull String getSerializedName() {
             return this.name;
+        }
+    }
+
+    public static class CapuchinMonkeyGroupData extends AgeableMobGroupData {
+        private final Variant groupVariant;
+
+        public CapuchinMonkeyGroupData(float babySpawnChance, Variant groupVariant) {
+            super(babySpawnChance);
+            this.groupVariant = groupVariant;
+        }
+
+        public Variant getGroupVariant() {
+            return this.groupVariant;
         }
     }
 }

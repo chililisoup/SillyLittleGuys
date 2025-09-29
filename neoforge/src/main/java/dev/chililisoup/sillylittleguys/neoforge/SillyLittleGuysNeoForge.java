@@ -7,15 +7,19 @@ import net.minecraft.advancements.critereon.EntitySubPredicate;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.SpawnPlacementType;
+import net.minecraft.world.entity.SpawnPlacements;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.sensing.SensorType;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -43,6 +47,7 @@ public final class SillyLittleGuysNeoForge {
             SillyLittleGuys.MOD_ID
     );
     public static final ArrayList<EntityAttributesEntry<? extends LivingEntity>> ENTITY_ATTRIBUTES = new ArrayList<>();
+    public static final ArrayList<SpawnPlacementEntry<? extends LivingEntity>> SPAWN_PLACEMENTS = new ArrayList<>();
 
     public SillyLittleGuysNeoForge(IEventBus eventBus) {
         SillyLittleGuys.init();
@@ -53,6 +58,7 @@ public final class SillyLittleGuysNeoForge {
         SENSOR_TYPES.register(eventBus);
 
         eventBus.addListener(SillyLittleGuysNeoForge::createDefaultAttributes);
+        eventBus.addListener(SillyLittleGuysNeoForge::registerSpawnPlacements);
 
         if (FMLEnvironment.dist == Dist.CLIENT)
             SillyLittleGuysClientNeoForge.init(eventBus);
@@ -65,6 +71,27 @@ public final class SillyLittleGuysNeoForge {
     public record EntityAttributesEntry<T extends LivingEntity>(Supplier<EntityType<T>> entityType, Supplier<AttributeSupplier.Builder> defaultAttributes) {
         public void register(EntityAttributeCreationEvent event) {
             event.put(this.entityType.get(), this.defaultAttributes.get().build());
+        }
+    }
+
+    public static void registerSpawnPlacements(RegisterSpawnPlacementsEvent event) {
+        SPAWN_PLACEMENTS.forEach(entry -> entry.register(event));
+    }
+
+    public record SpawnPlacementEntry<T extends LivingEntity>(
+            Supplier<EntityType<T>> entityType,
+            SpawnPlacementType spawnPlacementType,
+            Heightmap.Types heightmapType,
+            SpawnPlacements.SpawnPredicate<T> spawnPredicate
+    ) {
+        public void register(RegisterSpawnPlacementsEvent event) {
+            event.register(
+                    this.entityType.get(),
+                    this.spawnPlacementType,
+                    this.heightmapType,
+                    this.spawnPredicate,
+                    RegisterSpawnPlacementsEvent.Operation.OR
+            );
         }
     }
 }

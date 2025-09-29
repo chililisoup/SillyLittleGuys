@@ -2,10 +2,10 @@ package dev.chililisoup.sillylittleguys.reg.neoforge;
 
 import dev.chililisoup.sillylittleguys.SillyLittleGuys;
 import dev.chililisoup.sillylittleguys.neoforge.SillyLittleGuysNeoForge;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 
 import java.util.function.Supplier;
@@ -15,6 +15,9 @@ public class ModEntitiesImpl {
             EntityType.Builder<T> builder,
             String name,
             Supplier<AttributeSupplier.Builder> defaultAttributes,
+            SpawnPlacementType spawnPlacementType,
+            Heightmap.Types heightmapType,
+            SpawnPlacements.SpawnPredicate<T> spawnPredicate,
             int backgroundColor,
             int highlightColor
     ) {
@@ -36,6 +39,15 @@ public class ModEntitiesImpl {
                         new Item.Properties()
                 )
         ));
+
+        SillyLittleGuysNeoForge.SPAWN_PLACEMENTS.add(
+                new SillyLittleGuysNeoForge.SpawnPlacementEntry<>(
+                        entityType,
+                        spawnPlacementType,
+                        heightmapType,
+                        spawnPredicate
+                )
+        );
 
         return entityType;
     }

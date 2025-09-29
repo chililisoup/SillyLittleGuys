@@ -1,11 +1,12 @@
 package dev.chililisoup.sillylittleguys.neoforge.client;
 
+import com.mojang.datafixers.util.Pair;
 import dev.chililisoup.sillylittleguys.client.SillyLittleGuysClient;
 import dev.chililisoup.sillylittleguys.neoforge.SillyLittleGuysNeoForge;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.*;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
@@ -34,7 +35,19 @@ public class SillyLittleGuysClientNeoForge {
     }
 
     public static void addToTabs(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS)
-            SillyLittleGuysNeoForge.SPAWN_EGGS.forEach(egg -> event.accept(egg.get()));
+        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
+            SillyLittleGuysNeoForge.SPAWN_EGGS.forEach(egg -> {
+                Item eggItem = egg.get();
+                ItemStack eggStack = new ItemStack(eggItem);
+
+                Pair<ItemStack, Boolean> eggPlacement = SillyLittleGuysClient.getEggPlacement(eggItem, new ArrayList<>(event.getParentEntries()));
+                if (eggPlacement == null)
+                    event.accept(eggStack);
+                else if (eggPlacement.getSecond())
+                    event.insertAfter(eggPlacement.getFirst(), eggStack, CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
+                else
+                    event.insertBefore(eggPlacement.getFirst(), eggStack, CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
+            });
+        }
     }
 }
