@@ -35,11 +35,28 @@ jobs:
     
     - name: Build with Gradle 8.14.3
       run: gradle build
-    - uses: actions/upload-artifact@v4
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: "Compiled artifacts for NeoForge"
-        path: neoforge/build/libs
-    - uses: actions/upload-artifact@v4
+        name: "Compiled artifacts"
+        path: |
+          build/libs
+          neoforge/build/libs
+          fabric/build/libs
+        
+    - name: Upload NeoForge jar
+      uses: actions/upload-artifact@v4
       with:
-        name: "Compiled artifacts for Fabric"
-        path: fabric/build/libs
+        path: |
+          neoforge/build/libs/*.jar
+          !neoforge/build/libs/**-dev-shadow.jar
+          !neoforge/build/libs/**-sources.jar
+        
+    - name: Upload Fabric jar
+      uses: actions/upload-artifact@v4
+      with:
+        path: |
+          fabric/build/libs/*.jar
+          !fabric/build/libs/**-dev-shadow.jar
+          !fabric/build/libs/**-sources.jar
